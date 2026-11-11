@@ -1,0 +1,295 @@
+
+/* MAIN WEBSITE */
+.website {
+  width: 100%;
+  overflow: hidden;
+  background: #faf9f6;
+  color: #202b36;
+}
+
+/* NAVIGATION */
+.navbar {
+  min-height: 82px;
+  padding: 0 8%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #faf9f6;
+  border-bottom: 1px solid #e9e5df;
+}
+
+.logo {
+  color: #202b36;
+  font-size: 25px;
+  font-weight: 800;
+  text-decoration: none;
+  letter-spacing: -1px;
+}
+
+.logo span {
+  color: #c47755;
+}
+
+.nav-links {
+  display: flex;
+  gap: 35px;
+}
+
+.nav-links a {
+  color: #53606c;
+  text-decoration: none;
+  font-size: 14px;
+  transition: color 0.2s ease;
+}
+
+.nav-links a:hover {
+  color: #c47755;
+}
+
+.nav-button,
+.primary-button {
+  display: inline-block;
+  background: #202b36;
+  color: white;
+  padding: 13px 23px;
+  border-radius: 5px;
+  text-decoration: none;
+  font-weight: 600;
+  transition: background 0.2s ease;
+}
+
+.nav-button:hover,
+.primary-button:hover {
+  background: #c47755;
+}
+
+/* HERO SECTION */
+.hero {
+  min-height: 570px;
+  padding: 75px 10%;
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  align-items: center;
+  gap: 55px;
+}
+
+.eyebrow {
+  color: #c47755;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+.hero h1 {
+  margin: 22px 0;
+  font-size: clamp(48px, 6vw, 76px);
+  line-height: 1.08;
+  letter-spacing: -3px;
+  color: #202b36;
+}
+
+.hero h1 span {
+  color: #c47755;
+}
+
+.hero-content > p {
+  max-width: 490px;
+  color: #68737d;
+  line-height: 1.9;
+  font-size: 16px;
+  margin-bottom: 30px;
+}
+
+.hero-note {
+  margin-top: 20px;
+  font-size: 12px;
+  color: #7b858e;
+}
+
+/* HERO VISUAL */
+.hero-visual {
+  display: flex;
+  justify-content: center;
+}
+
+.visual-card {
+  width: 100%;
+  max-width: 390px;
+  min-height: 390px;
+  padding: 35px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: #e9e0d5;
+  border-radius: 190px 190px 12px 12px;
+  box-shadow: 0 20px 45px rgba(32, 43, 54, 0.09);
+}
+
+.visual-label {
+  color: #7c6c5f;
+  font-size: 10px;
+  letter-spacing: 2px;
+  font-weight: 700;
+}
+
+.visual-icon {
+  color: #c47755;
+  font-size: 90px;
+  text-align: center;
+}
+
+.visual-title {
+  color: #202b36;
+  font-size: 34px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.visual-description {
+  color: #68737d;
+  font-size: 13px;
+}
+
+.visual-bottom {
+  display: flex;
+  justify-content: space-between;
+  color: #8b7b6e;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+/* HOW IT WORKS */
+.how-section {
+  padding: 90px 10%;
+  background: #f0ede7;
+  text-align: center;
+}
+
+.how-section h2,
+.about-section h2 {
+  margin: 15px 0;
+  font-size: 36px;
+  color: #202b36;
+}
+
+.section-description {
+  color: #68737d;
+  margin-bottom: 45px;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+  text-align: left;
+}
+
+.step-card {
+  background: #faf9f6;
+  padding: 30px;
+  border: 1px solid #e7e1d8;
+  border-radius: 9px;
+}
+
+.step-number {
+  color: #c47755;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.step-card h3 {
+  margin: 22px 0 10px;
+  color: #202b36;
+}
+
+.step-card p {
+  color: #68737d;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* ABOUT */
+.about-section {
+  padding: 90px 10%;
+  text-align: center;
+}
+
+.about-section h2 {
+  max-width: 600px;
+  margin: 18px auto;
+}
+
+.about-section p {
+  max-width: 650px;
+  margin: auto;
+  color: #68737d;
+  line-height: 1.9;
+}
+
+/* FOOTER */
+.footer {
+  padding: 30px 8%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #202b36;
+}
+
+.footer .logo {
+  color: white;
+}
+
+.footer p {
+  color: #c5cbd0;
+  font-size: 12px;
+}
+
+/* MOBILE RESPONSIVENESS */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 20px 5%;
+    flex-wrap: wrap;
+    gap: 20px;
+  }
+
+  .nav-links {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+    gap: 20px;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    padding: 65px 7%;
+    gap: 40px;
+  }
+
+  .hero h1 {
+    letter-spacing: -2px;
+  }
+
+  .visual-card {
+    min-height: 340px;
+  }
+
+  .steps {
+    grid-template-columns: 1fr;
+  }
+
+  .how-section,
+  .about-section {
+    padding: 65px 7%;
+  }
+
+  .how-section h2,
+  .about-section h2 {
+    font-size: 29px;
+  }
+
+  .footer {
+    flex-direction: column;
+    gap: 15px;
+    text-align: center;
+  }
+}
