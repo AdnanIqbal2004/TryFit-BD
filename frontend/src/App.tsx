@@ -1,5 +1,6 @@
 
 import './App.css';
+import TryOnForm from './TryOnForm';
 
 function App() {
   return (
@@ -17,7 +18,7 @@ function App() {
           <a href="#about">About</a>
         </div>
 
-        <a href="#how-it-works" className="nav-button">
+        <a href="#try-on" className="nav-button">
           Try It On
         </a>
       </nav>
@@ -42,7 +43,7 @@ function App() {
               designed for online shoppers in Bangladesh.
             </p>
 
-            <a href="#how-it-works" className="primary-button">
+            <a href="#try-on" className="primary-button">
               Start Virtual Try-On →
             </a>
 
@@ -70,6 +71,8 @@ function App() {
 
         </section>
 
+        <TryOnForm />
+
         {/* How It Works */}
         <section className="how-section" id="how-it-works">
           <span className="eyebrow">THREE SIMPLE STEPS</span>
@@ -88,7 +91,7 @@ function App() {
             <article className="step-card">
               <span className="step-number">02</span>
               <h3>Select Your Outfit</h3>
-              <p>Choose a garment from the catalogue.</p>
+              <p>Upload a photo of the garment you want to preview.</p>
             </article>
 
             <article className="step-card">
