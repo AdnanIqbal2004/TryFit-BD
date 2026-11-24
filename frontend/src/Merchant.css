@@ -1,0 +1,67 @@
+.header-actions { display: flex; align-items: center; gap: 19px; }
+.header-actions .button { white-space: nowrap; }
+.gated-studio { display: flex; justify-content: space-between; align-items: center; gap: 25px; }
+.gated-studio p { margin-top: 12px; color: #e0cddc; }
+.gated-studio .button-primary { background: #f3cddd; color: var(--ink); }
+.gated-studio .button-primary:hover { background: #fff0f5; }
+
+.account-loading { padding-block: 60px; }
+.merchant-auth { min-height: 64vh; display: grid; grid-template-columns: 1.06fr .94fr; gap: clamp(24px, 8vw, 108px); align-items: center; padding-block: 72px 86px; }
+.merchant-auth h1, .merchant-workspace h1 { font-family: var(--display); font-weight: 400; line-height: .99; letter-spacing: -.06em; }
+.merchant-auth h1 { font-size: clamp(59px, 7.4vw, 105px); max-width: 650px; }
+.merchant-auth h1 em { color: var(--plum); }
+.merchant-auth-intro > p:last-child { max-width: 380px; color: var(--muted); margin-top: 22px; font-size: 17px; }
+.merchant-card { border: 1px solid var(--line); border-radius: 12px; background: #fffdf9; padding: clamp(18px, 3vw, 32px); min-width: 0; }
+.auth-card { box-shadow: 0 18px 65px #49214212; }
+.auth-card h2, .dashboard-panel h2 { font-size: clamp(29px, 3vw, 44px); margin-block: 13px; }
+.auth-switch, .workspace-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 22px; }
+.auth-switch button, .workspace-nav button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--plum); font-weight: 650; }
+.auth-switch button[aria-pressed="true"], .workspace-nav button[aria-pressed="true"] { background: var(--plum); color: white; border-color: var(--plum); }
+.merchant-fields, .dashboard-form { display: grid; gap: 13px; margin-top: 17px; }
+.merchant-fields label, .dashboard-form label { display: grid; min-width: 0; gap: 5px; font-weight: 650; font-size: 14px; }
+.merchant-workspace select, .merchant-fields input, .dashboard-form input {
+  width: 100%; min-width: 0; padding: 9px 11px; min-height: 42px; background: #fff; color: var(--ink); border: 1px solid #bfacb9; border-radius: 5px;
+}
+.merchant-fields .button { justify-self: start; margin-top: 3px; }
+.auth-help { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 19px; color: var(--plum); }
+.notice { margin-block: 12px; padding: 11px 13px; color: #41273b; background: #f4e9ed; border: 1px solid #dfc9d4; border-radius: 6px; font-size: 14px; }
+.notice-error { color: #7d2535; background: #fff1f0; border-color: #edc6c7; }
+.notice a { display: inline-block; margin-top: 4px; font-weight: 650; }
+
+.merchant-workspace { min-height: 70vh; padding-block: 51px 70px; }
+.workspace-heading, .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.merchant-workspace h1 { font-size: clamp(46px, 6vw, 78px); overflow-wrap: anywhere; }
+.workspace-heading p:last-child { color: var(--muted); margin-top: 8px; }
+.workspace-controls { display: flex; flex-wrap: wrap; justify-content: end; gap: 10px; }
+.workspace-controls select { max-width: 230px; width: auto; }
+.workspace-nav { padding: 20px 0 15px; border-bottom: 1px solid var(--line); margin-block: 15px 23px; }
+.workspace-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.workspace-metrics p, .dashboard-panel > p { color: var(--muted); }
+.workspace-metrics strong { display: block; font-family: var(--display); font-size: clamp(34px, 5vw, 58px); font-weight: 400; line-height: 1.1; }
+.dashboard-panel { margin-bottom: 17px; }
+.dashboard-list { list-style: none; margin: 15px 0 0; padding: 0; }
+.dashboard-list li { padding: 11px 0; border-top: 1px solid #e6dbe1; display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+.dashboard-list li > div { min-width: 0; overflow-wrap: anywhere; }
+.dashboard-list small { display: block; color: var(--muted); }
+.dashboard-form { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); align-items: end; margin-bottom: 17px; }
+.dashboard-form .button, .dashboard-form select { min-height: 42px; }
+.job-status { padding: 3px 9px; border-radius: 5px; background: #f0e5ec; font-weight: 650; font-size: 12px; white-space: nowrap; }
+.job-done { background: #e5eee6; color: #2c593d; }
+.job-failed { background: #f8e6ea; color: #862f44; }
+.secret-panel { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.secret-panel code { overflow-wrap: anywhere; }
+.secret-panel button { flex-shrink: 0; }
+
+@media (max-width: 840px) {
+  .merchant-auth { grid-template-columns: 1fr; max-width: 650px; padding-block: 42px; }
+  .merchant-auth h1 { max-width: 580px; }
+}
+@media (max-width: 600px) {
+  .header-actions { gap: 9px; }
+  .header-actions > .text-link { display: none; }
+  .gated-studio, .workspace-heading, .panel-heading { align-items: flex-start; flex-direction: column; }
+  .workspace-metrics { grid-template-columns: 1fr; gap: 9px; }
+  .merchant-workspace { padding-block: 34px 46px; }
+  .workspace-nav { gap: 5px; }
+  .workspace-nav button { padding: 6px 9px; font-size: 13px; }
+}

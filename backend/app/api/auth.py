@@ -106,6 +106,7 @@ def logout(request: Request, response: Response):
     if raw:
         _store(request).revoke_session(token_digest(raw))
     response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=get_settings().env.lower() != "development", samesite="lax")
+    response.status_code = 204
     return response
 
 @router.get("/me")
