@@ -45,7 +45,6 @@ async function responseError(response: Response): Promise<string> {
 export default function TryOnForm() {
   const [person, setPerson] = useState<File | null>(null)
   const [garment, setGarment] = useState<File | null>(null)
-  const [category, setCategory] = useState('upper')
   const [consent, setConsent] = useState(false)
   const [jobId, setJobId] = useState('')
   const [job, setJob] = useState<Job | null>(null)
@@ -94,7 +93,7 @@ export default function TryOnForm() {
       }
       const form = new FormData()
       form.set('consent', 'true')
-      form.set('category', category)
+      form.set('category', 'upper')
       form.set('person_image', person)
       form.set('garment_image', garment)
       const response = await fetch('/api/jobs', { method: 'POST', body: form })
@@ -130,27 +129,20 @@ export default function TryOnForm() {
   const waiting = busy || job?.status === 'waiting' || job?.status === 'processing'
   const statusText = job?.status === 'waiting' ? 'Your request is in the queue…'
     : job?.status === 'processing' ? 'Preparing your preview…'
-      : job?.status === 'done' ? 'Your preview is ready.'
+      : job?.status === 'done' ? 'AI-generated preview ready.'
         : job?.status === 'failed' ? 'Try-on generation failed.' : ''
 
   return (
     <section className="try-on-section" id="try-on" aria-labelledby="try-on-title">
       <span className="eyebrow">YOUR VIRTUAL FITTING ROOM</span>
       <h2 id="try-on-title">Build your try-on preview</h2>
-      <p className="try-on-intro">Choose a person photo and a garment image to submit a private preview request. Generation is not active until a try-on model is approved and configured.</p>
+      <p className="try-on-intro">Use a clear, front-facing photo and a separate image of a shirt, top, or cardigan. A GPU is required to generate a preview.</p>
       <form onSubmit={submit}>
         <div className="try-on-fields">
           <UploadField id="person-image" title="Your photo" file={person} onFile={setPerson} />
           <UploadField id="garment-image" title="Garment image" file={garment} onFile={setGarment} />
         </div>
         <div className="try-on-controls">
-          <label className="try-on-category">Garment type
-            <select value={category} onChange={(event) => setCategory(event.target.value)}>
-              <option value="upper">Top / upper body</option>
-              <option value="lower">Bottom / lower body</option>
-              <option value="dress">Dress</option>
-            </select>
-          </label>
           <label className="try-on-consent">
             <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
             I have permission to use these images and consent to their temporary processing. They are not used to train a model.
@@ -165,7 +157,7 @@ export default function TryOnForm() {
         {(error || job?.error_message) && <p>{error || job?.error_message}</p>}
         {job?.status === 'done' && <img className="try-on-result" src={'/api/jobs/' + encodeURIComponent(job.job_id) + '/result'} alt="Generated virtual try-on preview" />}
       </div>}
-      {(jobId || person || garment) && <button className="try-on-delete" type="button" onClick={deleteImages}>Delete temporary images and start over</button>}
+      {(jobId || person || garment) && <button className="try-on-delete" type="button" onClick={deleteImages} disabled={busy}>Delete temporary images and start over</button>}
       <p className="try-on-disclaimer">TryFit BD is an academic prototype. Results do not predict size, fit, color, fabric, or comfort.</p>
     </section>
   )

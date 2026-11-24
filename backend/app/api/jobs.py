@@ -52,8 +52,8 @@ async def create_job(
     """Validate both images and enqueue one temporary try-on request."""
     if consent is not True:
         raise HTTPException(status_code=400, detail="Consent is required before images can be processed.")
-    if category not in {"upper", "lower", "dress"}:
-        raise HTTPException(status_code=400, detail="Choose a supported garment category.")
+    if category != "upper":
+        raise HTTPException(status_code=400, detail="This demo supports upper-body garments only.")
     settings = get_settings()
     try:
         person_bytes, person_ext = await read_validated_image(person_image, settings)

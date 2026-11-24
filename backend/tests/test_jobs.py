@@ -95,3 +95,68 @@ def test_output_check_rejects_corrupt_file(tmp_path):
     corrupt_path.write_bytes(b"not an image")
     with pytest.raises(OutputValidationError, match="could not be read"):
         validate_output_image(corrupt_path)
+
+
+def test_configured_catvton_adapter_serves_result_and_deletes_it(settings, monkeypatch, tmp_path):
+    from io import BytesIO
+    from time import monotonic, sleep
+    from types import SimpleNamespace
+    from contextlib import nullcontext
+
+    from fastapi.testclient import TestClient
+    from PIL import ImageDraw
+
+    from app.ai.catvton import CatVTONEngine
+    import app.api.jobs as jobs_api
+    import app.main as main_module
+
+    def resize(image, size):
+        return image.resize(size)
+
+    def make_mask(image, mask_type):
+        assert mask_type == "upper"
+        result = Image.new("L", image.size)
+        ImageDraw.Draw(result).rectangle((20, 20, 100, 100), fill=255)
+        return {"mask": result}
+
+    def generate(**options):
+        assert options["mask"].size == (576, 768)
+        assert options["num_inference_steps"] == 25
+        assert options["generator"] == 42
+        return [options["image"]]
+
+    def generator(device):
+        assert device == "cuda"
+        return SimpleNamespace(manual_seed=lambda seed: seed)
+
+    runtime = (SimpleNamespace(inference_mode=nullcontext, Generator=generator),
+               generate, make_mask, resize, resize)
+    monkeypatch.setattr(CatVTONEngine, "_load_runtime", lambda self: runtime)
+    settings.catvton_source = tmp_path / "catvton-source"
+    monkeypatch.setattr(main_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(jobs_api, "get_settings", lambda: settings)
+
+    with TestClient(main_module.app) as client:
+        files = {
+            "person_image": ("person.jpg", make_image_bytes(), "image/jpeg"),
+            "garment_image": ("garment.jpg", make_image_bytes(), "image/jpeg"),
+        }
+        assert client.post("/api/jobs", data={"consent": "true", "category": "dress"}, files=files).status_code == 400
+        created = client.post("/api/jobs", data={"consent": "true"}, files=files)
+        assert created.status_code == 202
+        endpoint = f"/api/jobs/{created.json()['job_id']}"
+        deadline = monotonic() + 3
+        while monotonic() < deadline:
+            job = client.get(endpoint).json()
+            if job["status"] in {"done", "failed"}:
+                break
+            sleep(0.02)
+        assert job["status"] == "done", job
+        result = client.get(endpoint + "/result")
+        assert result.status_code == 200
+        assert result.headers["cache-control"] == "no-store"
+        with Image.open(BytesIO(result.content)) as preview:
+            assert preview.format == "PNG"
+            assert preview.size == (576, 768)
+        assert client.delete(endpoint).status_code == 204
+        assert client.get(endpoint + "/result").status_code == 404
