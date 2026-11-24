@@ -53,6 +53,12 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 Open http://127.0.0.1:8000 on that machine. Select a clear front-facing person photo and a separate upper-body garment image, give consent, and click **Create preview**. Check the result, then use **Delete temporary images and start over**. A device that lacks a compatible GPU can run the interface and API in development mode with the model disabled.
 
+### Backend merchant API and AMD runtime
+
+The backend includes merchant registration/sign-in, email verification and password recovery, workspace memberships, API-key management, store records, job history, and workspace usage endpoints. SQLite is created at `data/tryfit.db` by default. For development without SMTP, action links are returned to the UI; configure SMTP before sending real verification or invitation emails. Store records are not Shopify/WooCommerce OAuth integrations, and billing is not included.
+
+CatVTON detects AMD ROCm PyTorch through `torch.version.hip`. Set `TRYFIT_DEVICE=rocm` and configure `TRYFIT_CATVTON_SOURCE` on a supported GPU host. See [`docs/catvton.md`](docs/catvton.md) and run `python scripts/check_amd_runtime.py` in the GPU environment before installing CatVTON dependencies. AMD support has not been validated with the full CatVTON/DensePose stack; Windows support is especially limited.
+
 ### Windows development
 
 From `backend`, run `py -3.11 -m venv .venv` if needed, then `.venv\Scripts\python.exe -m pip install -e ".[dev]"` and `.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000`. In a separate terminal from `frontend`, run `npm ci` and `npm run dev`. Vite forwards `/api` requests to port 8000.
