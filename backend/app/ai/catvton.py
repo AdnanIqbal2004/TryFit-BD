@@ -18,9 +18,12 @@ class CatVTONEngine:
     model_name = "CatVTON"
     device = "cuda"
 
-    def __init__(self, source: Path, width: int, height: int, steps: int) -> None:
+    def __init__(self, source: Path, width: int, height: int, steps: int, requested_device: str = "auto") -> None:
         self._source = source.expanduser().resolve()
         self._runtime = None
+        self._requested_device = requested_device.lower()
+        self.model_available = False
+        self.runtime = "GPU runtime not loaded"
         self.run_settings = {
             "width": width,
             "height": height,
@@ -38,8 +41,19 @@ class CatVTONEngine:
             import torch
         except ImportError as exc:
             raise ModelUnavailableError("PyTorch is missing from the GPU environment.") from exc
+        if self._requested_device not in {"auto", "cuda", "rocm", "hip"}:
+            raise ModelUnavailableError("Set TRYFIT_DEVICE to auto, cuda, or rocm for CatVTON.")
+        hip_version = getattr(torch.version, "hip", None)
+        is_rocm = bool(hip_version)
+        if is_rocm and self._requested_device == "cuda":
+            raise ModelUnavailableError("This PyTorch build uses AMD ROCm. Set TRYFIT_DEVICE=rocm or auto.")
+        if not is_rocm and self._requested_device in {"rocm", "hip"}:
+            raise ModelUnavailableError("TRYFIT_DEVICE=rocm requires a PyTorch build compiled with ROCm/HIP.")
         if not torch.cuda.is_available():
-            raise ModelUnavailableError("CatVTON requires a working CUDA GPU in this setup.")
+            runtime = "AMD ROCm" if is_rocm else "NVIDIA CUDA"
+            raise ModelUnavailableError(f"CatVTON could not find an available GPU through the {runtime} PyTorch runtime.")
+        # ROCm PyTorch intentionally uses the torch.cuda API and "cuda" device string.
+        self.runtime = f"ROCm {hip_version} · {torch.cuda.get_device_name(0)}" if is_rocm else f"CUDA · {torch.cuda.get_device_name(0)}"
 
         source_path = str(self._source)
         if source_path not in sys.path:
@@ -67,6 +81,7 @@ class CatVTONEngine:
             device=self.device,
         )
         self._runtime = (torch, pipeline, masker, resize_and_crop, resize_and_padding)
+        self.model_available = True
         return self._runtime
 
     def generate(
