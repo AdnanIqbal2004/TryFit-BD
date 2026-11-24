@@ -10,12 +10,15 @@ from fastapi.staticfiles import StaticFiles
 from app.api.health import router as health_router
 from app.api.jobs import router as jobs_router
 from app.api.uploads import router as uploads_router
+from app.api.auth import router as auth_router
+from app.api.workspace import router as workspace_router
 from app.ai.catvton import CatVTONEngine
 from app.ai.engine import UnconfiguredTryOnEngine
 from app.core.config import PROJECT_ROOT, Settings, get_settings
 from app.services.job_manager import JobManager
 from app.services.retention import retention_cleanup_loop
 from app.services.storage import ensure_private_root
+from app.services.saas_store import SaaSStore
 
 
 def create_engine(settings: Settings) -> CatVTONEngine | UnconfiguredTryOnEngine:
@@ -26,6 +29,7 @@ def create_engine(settings: Settings) -> CatVTONEngine | UnconfiguredTryOnEngine
         settings.catvton_width,
         settings.catvton_height,
         settings.catvton_steps,
+        settings.device,
     )
 
 
@@ -33,7 +37,10 @@ def create_engine(settings: Settings) -> CatVTONEngine | UnconfiguredTryOnEngine
 async def lifespan(app: FastAPI):
     settings = get_settings()
     await asyncio.to_thread(ensure_private_root, settings)
-    job_manager = JobManager(settings, create_engine(settings))
+    app.state.saas_store = SaaSStore(settings.resolved_database_path)
+    engine = create_engine(settings)
+    app.state.tryon_engine = engine
+    job_manager = JobManager(settings, engine, app.state.saas_store)
     await job_manager.start()
     app.state.job_manager = job_manager
     cleanup_task = asyncio.create_task(retention_cleanup_loop(settings))
@@ -51,6 +58,8 @@ app = FastAPI(title="TryFit BD", version="0.1.0", lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(uploads_router)
 app.include_router(jobs_router)
+app.include_router(auth_router)
+app.include_router(workspace_router)
 
 
 # Serve the production UI and API together when a frontend build is available.

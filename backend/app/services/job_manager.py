@@ -14,6 +14,7 @@ from app.ai.engine import ModelUnavailableError, TryOnEngine
 from app.ai.output_check import OutputValidationError, validate_output_image
 from app.core.config import Settings
 from app.services.storage import store_job_inputs
+from app.services.saas_store import SaaSStore
 
 logger = logging.getLogger(__name__)
 JobState = Literal["waiting", "processing", "done", "failed"]
@@ -41,6 +42,7 @@ class JobRecord:
     result_path: Path | None = None
     processing_seconds: float | None = None
     deleted: bool = False
+    organization_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,9 +57,10 @@ class JobSnapshot:
 class JobManager:
     """Run inference serially and keep only temporary in-memory job state."""
 
-    def __init__(self, settings: Settings, engine: TryOnEngine) -> None:
+    def __init__(self, settings: Settings, engine: TryOnEngine, store: SaaSStore | None = None) -> None:
         self._settings = settings
         self._engine = engine
+        self._store = store
         self._queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=settings.max_pending_jobs)
         self._jobs: dict[str, JobRecord] = {}
         self._worker_task: asyncio.Task[None] | None = None
@@ -81,6 +84,7 @@ class JobManager:
         garment_bytes: bytes,
         garment_extension: str,
         category: str,
+        organization_id: str = "",
     ) -> JobSnapshot:
         if self._worker_task is None or self._worker_task.done():
             await self.start()
@@ -105,35 +109,48 @@ class JobManager:
             category=category,
             created_at=datetime.now(timezone.utc),
             expires_at=expires_at,
+            organization_id=organization_id,
         )
+        if self._store and organization_id:
+            try:
+                self._store.create_job(job_id=job_id, organization_id=organization_id, category=category, status="waiting", expires_at=expires_at.isoformat())
+            except Exception:
+                await asyncio.to_thread(shutil.rmtree, job_dir, True)
+                raise
         self._jobs[job_id] = record
         try:
             self._queue.put_nowait(job_id)
         except asyncio.QueueFull as exc:
             self._jobs.pop(job_id, None)
+            if self._store:
+                self._store.mark_job_deleted(job_id)
             await asyncio.to_thread(shutil.rmtree, job_dir, True)
             raise JobQueueFullError("The try-on queue is full. Please try again shortly.") from exc
         return self._snapshot(record)
 
-    def get_status(self, job_id: str) -> JobSnapshot:
-        record = self._get_record(job_id)
+    def get_status(self, job_id: str, organization_id: str | None = None) -> JobSnapshot:
+        record = self._get_record(job_id, organization_id)
         return self._snapshot(record)
 
-    def get_result_path(self, job_id: str) -> Path:
-        record = self._get_record(job_id)
+    def get_result_path(self, job_id: str, organization_id: str | None = None) -> Path:
+        record = self._get_record(job_id, organization_id)
         if record.status != "done" or record.result_path is None:
             raise JobNotFoundError("A completed result is not available for this job.")
         return record.result_path
 
-    async def delete(self, job_id: str) -> None:
-        record = self._get_record(job_id)
+    async def delete(self, job_id: str, organization_id: str | None = None) -> None:
+        record = self._get_record(job_id, organization_id)
+        if self._store:
+            self._store.mark_job_deleted(job_id)
         record.deleted = True
         await asyncio.to_thread(shutil.rmtree, record.job_dir, True)
         if record.status == "waiting":
             self._jobs.pop(record.job_id, None)
 
-    def _get_record(self, job_id: str) -> JobRecord:
+    def _get_record(self, job_id: str, organization_id: str | None = None) -> JobRecord:
         record = self._jobs.get(job_id)
+        if record is not None and organization_id is not None and record.organization_id != organization_id:
+            raise JobNotFoundError("Job was not found or has expired.")
         if record is None or record.deleted or not record.job_dir.is_dir():
             self._jobs.pop(job_id, None)
             raise JobNotFoundError("Job was not found or has expired.")
@@ -162,6 +179,8 @@ class JobManager:
                 if record is None or record.deleted:
                     continue
                 record.status = "processing"
+                if self._store:
+                    self._store.update_job(job_id=job_id, status="processing")
                 started = asyncio.get_running_loop().time()
                 success = False
                 try:
@@ -212,5 +231,7 @@ class JobManager:
                     if record.deleted:
                         await asyncio.to_thread(shutil.rmtree, record.job_dir, True)
                         self._jobs.pop(record.job_id, None)
+                    elif self._store:
+                        self._store.update_job(job_id=record.job_id, status=record.status, error_message=record.error_message, processing_seconds=record.processing_seconds, record_usage=success)
             finally:
                 self._queue.task_done()

@@ -31,6 +31,17 @@ class Settings(BaseSettings):
     cleanup_interval_seconds: int = Field(default=60, gt=0)
     max_pending_jobs: int = Field(default=10, gt=0)
     database_url: str = "sqlite:///./data/tryfit.db"
+    app_base_url: str = "http://127.0.0.1:5173"
+    session_days: int = Field(default=14, ge=1, le=90)
+    verification_minutes: int = Field(default=30, ge=5, le=1440)
+    password_reset_minutes: int = Field(default=30, ge=5, le=1440)
+    invitation_days: int = Field(default=7, ge=1, le=30)
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_sender: str = "TryFit BD <no-reply@tryfitbd.local>"
+    smtp_starttls: bool = True
     model_name: str = "unselected"
     device: str = "auto"
     catvton_source: Path | None = None
@@ -45,6 +56,14 @@ class Settings(BaseSettings):
         if self.storage_dir.is_absolute():
             return self.storage_dir
         return PROJECT_ROOT / self.storage_dir
+
+    @property
+    def resolved_database_path(self) -> Path:
+        prefix = "sqlite:///"
+        if not self.database_url.startswith(prefix):
+            raise ValueError("This build currently supports sqlite:/// database URLs only.")
+        path = Path(self.database_url[len(prefix):])
+        return path if path.is_absolute() else PROJECT_ROOT / path
 
 
 @lru_cache
