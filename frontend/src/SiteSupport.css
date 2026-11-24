@@ -1,0 +1,34 @@
+.site-support { border-top: 1px solid #e3d8d7; background: #f1e8ea; padding-block: 66px; }
+.support-grid { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: clamp(28px, 7vw, 100px); }
+.contact-icons { display: flex; flex-wrap: wrap; gap: 12px; list-style: none; padding: 0; margin: 24px 0 0; }
+.contact-icons li { display: grid; place-items: center; width: 53px; height: 53px; border: 1px solid #cbb4c1; border-radius: 10px; color: var(--plum); background: #fbf7f7; }
+.contact-icons svg { width: 23px; height: 23px; }
+.support-faq h3 { font-family: var(--display); font-size: clamp(26px, 3vw, 36px); font-weight: 400; margin-bottom: 15px; }
+.support-faq details { border-top: 1px solid #cdbbc6; }
+.support-faq details:last-child { border-bottom: 1px solid #cdbbc6; }
+.support-faq summary { padding: 13px 0; cursor: pointer; font-weight: 650; font-size: 15px; }
+.support-faq details p { padding: 0 0 13px 17px; color: var(--muted); max-width: 520px; font-size: 14px; }
+.header-actions.account-nav > .text-link { display: inline-flex; }
+.account-nav { display: flex; align-items: center; gap: 12px; }
+.header-inner .header-actions { gap: 13px; }
+.header-inner .nav-links { gap: clamp(14px, 2.3vw, 34px); }
+.footer-links { display: flex; gap: 18px; flex-wrap: wrap; }
+.auth-switch a { display: inline-flex; padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; color: var(--plum); font-weight: 650; text-decoration: none; }
+.auth-switch a[aria-current="page"] { background: var(--plum); color: white; border-color: var(--plum); }
+.auth-switch a:hover { text-decoration: underline; }
+
+@media (max-width: 760px) {
+  .site-header .header-inner { flex-wrap: wrap; gap: 10px 14px; padding-block: 11px; }
+  .site-header .nav-links { display: flex; order: 3; width: 100%; gap: 18px; padding-top: 8px; border-top: 1px solid #e3d8d7; }
+  .account-nav { gap: 9px; }
+  .account-nav .button { min-height: 38px; padding: 8px 10px; }
+  .account-nav .text-link { font-size: 13px; }
+}
+@media (max-width: 620px) {
+  .site-support { padding-block: 43px; }
+  .support-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 350px) {
+  .header-inner .brand { font-size: 27px; }
+  .header-inner .nav-links { gap: 13px; font-size: 13px; }
+}

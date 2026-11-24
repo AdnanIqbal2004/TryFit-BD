@@ -1,26 +1,27 @@
+*, *::before, *::after { box-sizing: border-box; }
 
-* {
-  margin: 0;
+html { scroll-behavior: smooth; }
+body { margin: 0; min-width: 280px; background: #f8f4ef; color: #241a23; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5; }
+h1, h2, h3, p, figure, ol { margin: 0; }
+ol { padding: 0; }
+img { display: block; max-width: 100%; }
+a { color: inherit; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   padding: 0;
-  box-sizing: border-box;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
-html {
-  scroll-behavior: smooth;
-}
-
-body {
-  min-width: 320px;
-  font-family: Arial, Helvetica, sans-serif;
-  background: #faf9f6;
-}
-
-button,
-input,
-textarea {
-  font: inherit;
-}
-
-a {
-  cursor: pointer;
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
 }

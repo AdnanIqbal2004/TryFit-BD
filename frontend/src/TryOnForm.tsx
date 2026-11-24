@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 
 type Job = {
@@ -7,28 +7,39 @@ type Job = {
   error_message: string | null
 }
 
+type SelectedImage = { file: File; previewUrl: string }
+
 type UploadFieldProps = {
   id: string
   title: string
-  file: File | null
-  onFile: (file: File | null) => void
+  image: SelectedImage | null
+  disabled: boolean
+  onFile: (image: SelectedImage) => void
 }
 
-function UploadField({ id, title, file, onFile }: UploadFieldProps) {
-  const previewUrl = useMemo(() => file ? URL.createObjectURL(file) : '', [file])
-  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl) }, [previewUrl])
+function UploadField({ id, title, image, disabled, onFile }: UploadFieldProps) {
+  const previewUrl = image?.previewUrl
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+  }, [previewUrl])
 
   function handleChange(event: ChangeEvent<HTMLInputElement>) {
-    onFile(event.target.files?.[0] ?? null)
+    const file = event.target.files?.[0]
+    if (file) onFile({ file, previewUrl: URL.createObjectURL(file) })
     event.target.value = ''
   }
 
   return (
-    <div className="try-on-upload">
-      <label htmlFor={id}>{title}</label>
-      <input key={file ? file.name : 'empty-' + id} id={id} type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" onChange={handleChange} />
-      {previewUrl && <img className="try-on-preview" src={previewUrl} alt={title + ' preview'} />}
-      <span>{file ? file.name : 'JPG or PNG, up to 10 MB'}</span>
+    <div className="upload-card">
+      <h3>{title}</h3>
+      <label className="upload-area" htmlFor={id}>
+        <input id={id} type="file" className="visually-hidden" accept="image/jpeg,image/png,.jpg,.jpeg,.png" disabled={disabled} aria-label={title} onChange={handleChange} />
+        {image && previewUrl
+          ? <img src={previewUrl} alt={title + ' preview'} />
+          : <span className="upload-symbol" aria-hidden="true">↑</span>}
+        <span className="upload-action">{image ? 'Change photo' : 'Choose a photo'}</span>
+      </label>
+      <p className="upload-caption" title={image?.file.name}>{image ? image.file.name : 'JPG or PNG · up to 10 MB'}</p>
     </div>
   )
 }
@@ -38,68 +49,98 @@ async function responseError(response: Response): Promise<string> {
     const body = await response.json()
     return typeof body.detail === 'string' ? body.detail : 'The request could not be completed.'
   } catch {
-    return 'Could not reach the backend. Make sure it is running on port 8000.'
+    return 'Could not reach the try-on service.'
   }
 }
 
-export default function TryOnForm() {
-  const [person, setPerson] = useState<File | null>(null)
-  const [garment, setGarment] = useState<File | null>(null)
+export default function TryOnForm({ workspaceId }: { workspaceId: string }) {
+  const [person, setPerson] = useState<SelectedImage | null>(null)
+  const [garment, setGarment] = useState<SelectedImage | null>(null)
   const [consent, setConsent] = useState(false)
-  const [jobId, setJobId] = useState('')
   const [job, setJob] = useState<Job | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [resultImage, setResultImage] = useState<{ jobId: string; url: string } | null>(null)
+  const jobId = job?.job_id
+  const activeJob = job?.status === 'waiting' || job?.status === 'processing'
 
   useEffect(() => {
-    if (!jobId || job?.status === 'done' || job?.status === 'failed') return
-    let active = true
+    if (!jobId || !activeJob) return
+    const request = new AbortController()
     let timer: number | undefined
+
     const poll = async () => {
       try {
-        const response = await fetch('/api/jobs/' + encodeURIComponent(jobId), { cache: 'no-store' })
+        const response = await fetch('/api/jobs/' + encodeURIComponent(jobId), { cache: 'no-store', signal: request.signal, headers: { 'X-Organization-Id': workspaceId } })
         if (!response.ok) throw new Error(await responseError(response))
         const next: Job = await response.json()
-        if (!active) return
+        if (request.signal.aborted) return
+        setError('')
         setJob(next)
         if (next.status === 'waiting' || next.status === 'processing') {
           timer = window.setTimeout(() => { void poll() }, 1200)
         }
       } catch (cause) {
-        if (active) setError(cause instanceof Error ? cause.message : 'Could not read job status.')
+        if (!request.signal.aborted) setError(cause instanceof Error ? cause.message : 'Could not read job status.')
       }
     }
+
     void poll()
     return () => {
-      active = false
+      request.abort()
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [jobId, job?.status])
+  }, [jobId, activeJob, workspaceId])
+
+  useEffect(() => {
+    if (job?.status !== 'done') return
+    const request = new AbortController()
+    let url: string | undefined
+    const loadImage = async () => {
+      try {
+        const response = await fetch('/api/jobs/' + encodeURIComponent(job.job_id) + '/result', {
+          cache: 'no-store', signal: request.signal, headers: { 'X-Organization-Id': workspaceId },
+        })
+        if (!response.ok) throw new Error(await responseError(response))
+        const blob = await response.blob()
+        if (request.signal.aborted) return
+        url = URL.createObjectURL(blob)
+        setResultImage({ url, jobId: job.job_id })
+      } catch (cause) {
+        if (!request.signal.aborted) setError(cause instanceof Error ? cause.message : 'Could not load the preview.')
+      }
+    }
+    void loadImage()
+    return () => {
+      request.abort()
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [job, workspaceId])
+
+  async function removeJob() {
+    if (!jobId) return
+
+    const response = await fetch('/api/jobs/' + encodeURIComponent(jobId), { method: 'DELETE', headers: { 'X-Organization-Id': workspaceId } })
+    if (!response.ok && response.status !== 404) throw new Error(await responseError(response))
+    setJob(null)
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!person || !garment || !consent) return
+    if (!person || !garment || !consent || busy || (activeJob && !error)) return
+
     setBusy(true)
     setError('')
-    const previousJobId = jobId
-    setJobId('')
-    setJob(null)
     try {
-      if (previousJobId) {
-        const removeResponse = await fetch('/api/jobs/' + encodeURIComponent(previousJobId), { method: 'DELETE' })
-        if (!removeResponse.ok && removeResponse.status !== 404) {
-          throw new Error(await responseError(removeResponse))
-        }
-      }
+      await removeJob()
       const form = new FormData()
       form.set('consent', 'true')
       form.set('category', 'upper')
-      form.set('person_image', person)
-      form.set('garment_image', garment)
-      const response = await fetch('/api/jobs', { method: 'POST', body: form })
+      form.set('person_image', person.file)
+      form.set('garment_image', garment.file)
+      const response = await fetch('/api/jobs', { method: 'POST', body: form, headers: { 'X-Organization-Id': workspaceId } })
       if (!response.ok) throw new Error(await responseError(response))
       const created: { job_id: string; status: Job['status'] } = await response.json()
-      setJobId(created.job_id)
       setJob({ job_id: created.job_id, status: created.status, error_message: null })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not start the try-on request.')
@@ -109,59 +150,70 @@ export default function TryOnForm() {
   }
 
   async function deleteImages() {
+    setBusy(true)
     setError('')
-    if (jobId) {
-      try {
-        const response = await fetch('/api/jobs/' + encodeURIComponent(jobId), { method: 'DELETE' })
-        if (!response.ok && response.status !== 404) throw new Error(await responseError(response))
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : 'Could not delete the job.')
-        return
-      }
+    try {
+      await removeJob()
+      setPerson(null)
+      setGarment(null)
+      setConsent(false)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not delete the job.')
+    } finally {
+      setBusy(false)
     }
-    setJobId('')
-    setJob(null)
-    setPerson(null)
-    setGarment(null)
-    setConsent(false)
   }
 
-  const waiting = busy || job?.status === 'waiting' || job?.status === 'processing'
-  const statusText = job?.status === 'waiting' ? 'Your request is in the queue…'
+  const waiting = busy || (activeJob && !error)
+  const resultUrl = job?.status === 'done' && resultImage?.jobId === job.job_id ? resultImage.url : ''
+  const message = error || job?.error_message
+  const status = job?.status === 'waiting' ? 'Your request is in the queue.'
     : job?.status === 'processing' ? 'Preparing your preview…'
-      : job?.status === 'done' ? 'AI-generated preview ready.'
-        : job?.status === 'failed' ? 'Try-on generation failed.' : ''
+      : job?.status === 'done' ? (resultUrl ? 'AI-generated preview ready.' : 'Loading your preview…')
+        : 'Try-on generation failed.'
 
   return (
-    <section className="try-on-section" id="try-on" aria-labelledby="try-on-title">
-      <span className="eyebrow">YOUR VIRTUAL FITTING ROOM</span>
-      <h2 id="try-on-title">Build your try-on preview</h2>
-      <p className="try-on-intro">Use a clear, front-facing photo and a separate image of a shirt, top, or cardigan. A GPU is required to generate a preview.</p>
-      <form onSubmit={submit}>
-        <div className="try-on-fields">
-          <UploadField id="person-image" title="Your photo" file={person} onFile={setPerson} />
-          <UploadField id="garment-image" title="Garment image" file={garment} onFile={setGarment} />
+    <section className="studio" id="try-on" aria-labelledby="try-on-title">
+      <div className="site-width">
+        <div className="studio-heading">
+          <h2 id="try-on-title">The fitting room</h2>
+          <p>Upload your photo and a separate image of an upper-body garment.</p>
         </div>
-        <div className="try-on-controls">
-          <label className="try-on-consent">
-            <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-            I have permission to use these images and consent to their temporary processing. They are not used to train a model.
-          </label>
-          <button className="primary-button" type="submit" disabled={!person || !garment || !consent || waiting}>
-            {waiting ? 'Working…' : 'Create preview'}
-          </button>
+        <div className="studio-grid">
+          <form className="studio-form" onSubmit={submit}>
+            <div className="upload-grid">
+              <UploadField id="person-image" title="Your photo" image={person} disabled={waiting} onFile={setPerson} />
+              <UploadField id="garment-image" title="Garment image" image={garment} disabled={waiting} onFile={setGarment} />
+            </div>
+            <label className="consent">
+              <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+              <span>I have permission to use these images and consent to temporary processing. Images are excluded from model training.</span>
+            </label>
+            <div className="studio-actions">
+              <button className="button button-primary" type="submit" disabled={!person || !garment || !consent || waiting}>
+                {waiting ? 'Working…' : 'Create preview'} <span aria-hidden="true">↗</span>
+              </button>
+              {(job || person || garment) && <button className="text-link delete-button" type="button" onClick={deleteImages} disabled={busy}>Delete images &amp; reset</button>}
+            </div>
+          </form>
+          <div className="result-card">
+            <div className="result-heading">
+              <h3>Your preview</h3>
+              {resultUrl && <span>AI-generated</span>}
+            </div>
+            <div className="result-stage" aria-live="polite">
+              {resultUrl && !error
+                ? <img src={resultUrl} alt="AI-generated virtual try-on preview" />
+                : <div className="result-message">
+                    <span className="result-symbol" aria-hidden="true">{message ? '!' : '✧'}</span>
+                    <strong>{error ? 'Request issue' : job ? status : 'Your result appears here'}</strong>
+                    {message && <p>{message}</p>}
+                  </div>}
+            </div>
+            <p className="result-note">AI-generated previews approximate appearance. Check the retailer’s size chart for fit.</p>
+          </div>
         </div>
-      </form>
-      {(job || error) && <div className="try-on-status" aria-live="polite">
-        <strong>{error ? 'Request issue' : statusText}</strong>
-        {(error || job?.error_message) && <p>{error || job?.error_message}</p>}
-        {job?.status === 'done' && <img className="try-on-result" src={'/api/jobs/' + encodeURIComponent(job.job_id) + '/result'} alt="Generated virtual try-on preview" />}
-      </div>}
-      {(jobId || person || garment) && <button className="try-on-delete" type="button" onClick={deleteImages} disabled={busy}>Delete temporary images and start over</button>}
-      <p className="try-on-disclaimer">TryFit BD is an academic prototype. Results do not predict size, fit, color, fabric, or comfort.</p>
+      </div>
     </section>
   )
 }
-
-
-
