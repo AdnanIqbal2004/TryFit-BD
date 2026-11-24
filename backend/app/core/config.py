@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/tryfit.db"
     model_name: str = "unselected"
     device: str = "auto"
+    catvton_source: Path | None = None
+    catvton_width: int = Field(default=576, ge=256, le=768, multiple_of=8)
+    catvton_height: int = Field(default=768, ge=256, le=1024, multiple_of=8)
+    catvton_steps: int = Field(default=25, ge=1, le=50)
 
     @property
     def resolved_storage_dir(self) -> Path:
