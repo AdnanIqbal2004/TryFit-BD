@@ -1,7 +1,8 @@
-export type Workspace = { id: string; name: string; role: 'owner' | 'admin' | 'member' }
+export type Workspace = { id: string; name: string; role: 'owner' | 'admin' | 'member'; kind: 'merchant' | 'customer' }
 export type Session = {
   user: { id: string; full_name: string; email: string }
   workspaces: Workspace[]
+  platform_owner: boolean
 }
 export type ActionMessage = { message: string; preview_url?: string | null }
 export type Dashboard = {

@@ -52,11 +52,12 @@ class CurrentActor:
     organization_name: str
     organization_slug: str
     role: str
+    workspace_kind: str
     api_key_id: str | None = None
 
     @property
     def can_manage(self) -> bool:
-        return self.role in {"owner", "admin"}
+        return self.workspace_kind == "merchant" and self.role in {"owner", "admin"}
 
 
 def current_actor(request: Request, *, required: bool = True) -> CurrentActor | None:
@@ -70,12 +71,13 @@ def current_actor(request: Request, *, required: bool = True) -> CurrentActor | 
         if api_key:
             member = store.get_membership(api_key["created_by_user_id"], api_key["organization_id"])
             user = store.get_user(api_key["created_by_user_id"])
-            if member and user and user["email_verified_at"] and not user["disabled_at"]:
+            if member and member["kind"] == "merchant" and user and user["email_verified_at"] and not user["disabled_at"]:
                 store.touch_api_key(api_key["id"])
                 return CurrentActor(
                     user_id=user["id"], email=user["email"], full_name=user["full_name"],
                     organization_id=member["organization_id"], organization_name=member["name"],
-                    organization_slug=member["slug"], role=member["role"], api_key_id=api_key["id"],
+                    organization_slug=member["slug"], role=member["role"],
+                    workspace_kind=member["kind"], api_key_id=api_key["id"],
                 )
 
     session_token = request.cookies.get(SESSION_COOKIE)
@@ -88,10 +90,10 @@ def current_actor(request: Request, *, required: bool = True) -> CurrentActor | 
                 return CurrentActor(
                     user_id=user["id"], email=user["email"], full_name=user["full_name"],
                     organization_id=member["organization_id"], organization_name=member["name"],
-                    organization_slug=member["slug"], role=member["role"],
+                    organization_slug=member["slug"], role=member["role"], workspace_kind=member["kind"],
                 )
     if required:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in with a verified merchant account to continue.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in with a verified account to continue.")
     return None
 
 

@@ -22,12 +22,15 @@ class InviteBody(BaseModel):
 def _store(request: Request) -> SaaSStore:
     return request.app.state.saas_store
 def _actor(request: Request) -> CurrentActor:
-    return current_actor(request)
+    actor = current_actor(request)
+    if actor.workspace_kind != "merchant":
+        raise HTTPException(403, "This page requires a merchant workspace.")
+    return actor
 
 @router.get("")
 def dashboard(request: Request):
     actor, store = _actor(request), _store(request)
-    return {"user": {"id": actor.user_id, "full_name": actor.full_name, "email": actor.email}, "workspace": {"id": actor.organization_id, "name": actor.organization_name, "slug": actor.organization_slug, "role": actor.role}, "workspaces": store.organizations_for_user(actor.user_id), "members": store.list_members(actor.organization_id), "invitations": store.list_invitations(actor.organization_id), "stores": store.list_stores(actor.organization_id), "api_keys": store.list_api_keys(actor.organization_id), "jobs": store.list_jobs(actor.organization_id), "usage": store.usage_summary(actor.organization_id)}
+    return {"user": {"id": actor.user_id, "full_name": actor.full_name, "email": actor.email}, "workspace": {"id": actor.organization_id, "name": actor.organization_name, "slug": actor.organization_slug, "role": actor.role, "kind": actor.workspace_kind}, "workspaces": store.organizations_for_user(actor.user_id), "members": store.list_members(actor.organization_id), "invitations": store.list_invitations(actor.organization_id), "stores": store.list_stores(actor.organization_id), "api_keys": store.list_api_keys(actor.organization_id), "jobs": store.list_jobs(actor.organization_id), "usage": store.usage_summary(actor.organization_id)}
 
 @router.post("/stores", status_code=201)
 def add_store(body: StoreBody, request: Request):

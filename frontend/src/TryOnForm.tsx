@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
+import { api } from './merchantApi'
+import { TryFitMirror, TryFitSample } from './TryFitMirror'
 
 type Job = {
   job_id: string
@@ -53,16 +55,26 @@ async function responseError(response: Response): Promise<string> {
   }
 }
 
-export default function TryOnForm({ workspaceId }: { workspaceId: string }) {
+export default function TryOnForm({ workspaceId, onJobChange }: { workspaceId: string; onJobChange?: () => void }) {
   const [person, setPerson] = useState<SelectedImage | null>(null)
   const [garment, setGarment] = useState<SelectedImage | null>(null)
   const [consent, setConsent] = useState(false)
   const [job, setJob] = useState<Job | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [resultImage, setResultImage] = useState<{ jobId: string; url: string } | null>(null)
+  const [resultImage, setResultImage] = useState<{ jobId: string; url: string; originalUrl?: string } | null>(null)
+  const [submittedPerson, setSubmittedPerson] = useState<{ jobId: string; file: File } | null>(null)
+  const [modelAvailable, setModelAvailable] = useState<boolean | null>(null)
   const jobId = job?.job_id
   const activeJob = job?.status === 'waiting' || job?.status === 'processing'
+
+  useEffect(() => {
+    const request = new AbortController()
+    api<{ model_available: boolean }>('/api/health', { signal: request.signal })
+      .then(health => { if (!request.signal.aborted) setModelAvailable(health.model_available) })
+      .catch(() => {})
+    return () => request.abort()
+  }, [])
 
   useEffect(() => {
     if (!jobId || !activeJob) return
@@ -79,6 +91,8 @@ export default function TryOnForm({ workspaceId }: { workspaceId: string }) {
         setJob(next)
         if (next.status === 'waiting' || next.status === 'processing') {
           timer = window.setTimeout(() => { void poll() }, 1200)
+        } else {
+          onJobChange?.()
         }
       } catch (cause) {
         if (!request.signal.aborted) setError(cause instanceof Error ? cause.message : 'Could not read job status.')
@@ -90,12 +104,13 @@ export default function TryOnForm({ workspaceId }: { workspaceId: string }) {
       request.abort()
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [jobId, activeJob, workspaceId])
+  }, [jobId, activeJob, workspaceId, onJobChange])
 
   useEffect(() => {
     if (job?.status !== 'done') return
     const request = new AbortController()
     let url: string | undefined
+    let originalUrl: string | undefined
     const loadImage = async () => {
       try {
         const response = await fetch('/api/jobs/' + encodeURIComponent(job.job_id) + '/result', {
@@ -105,7 +120,8 @@ export default function TryOnForm({ workspaceId }: { workspaceId: string }) {
         const blob = await response.blob()
         if (request.signal.aborted) return
         url = URL.createObjectURL(blob)
-        setResultImage({ url, jobId: job.job_id })
+        if (submittedPerson?.jobId === job.job_id) originalUrl = URL.createObjectURL(submittedPerson.file)
+        setResultImage({ url, originalUrl, jobId: job.job_id })
       } catch (cause) {
         if (!request.signal.aborted) setError(cause instanceof Error ? cause.message : 'Could not load the preview.')
       }
@@ -114,8 +130,9 @@ export default function TryOnForm({ workspaceId }: { workspaceId: string }) {
     return () => {
       request.abort()
       if (url) URL.revokeObjectURL(url)
+      if (originalUrl) URL.revokeObjectURL(originalUrl)
     }
-  }, [job, workspaceId])
+  }, [job, workspaceId, submittedPerson])
 
   async function removeJob() {
     if (!jobId) return
@@ -123,6 +140,8 @@ export default function TryOnForm({ workspaceId }: { workspaceId: string }) {
     const response = await fetch('/api/jobs/' + encodeURIComponent(jobId), { method: 'DELETE', headers: { 'X-Organization-Id': workspaceId } })
     if (!response.ok && response.status !== 404) throw new Error(await responseError(response))
     setJob(null)
+    setSubmittedPerson(null)
+    onJobChange?.()
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -141,7 +160,9 @@ export default function TryOnForm({ workspaceId }: { workspaceId: string }) {
       const response = await fetch('/api/jobs', { method: 'POST', body: form, headers: { 'X-Organization-Id': workspaceId } })
       if (!response.ok) throw new Error(await responseError(response))
       const created: { job_id: string; status: Job['status'] } = await response.json()
+      setSubmittedPerson({ jobId: created.job_id, file: person.file })
       setJob({ job_id: created.job_id, status: created.status, error_message: null })
+      onJobChange?.()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not start the try-on request.')
     } finally {
@@ -165,11 +186,11 @@ export default function TryOnForm({ workspaceId }: { workspaceId: string }) {
   }
 
   const waiting = busy || (activeJob && !error)
-  const resultUrl = job?.status === 'done' && resultImage?.jobId === job.job_id ? resultImage.url : ''
+  const result = job?.status === 'done' && resultImage?.jobId === job.job_id ? resultImage : null
   const message = error || job?.error_message
   const status = job?.status === 'waiting' ? 'Your request is in the queue.'
     : job?.status === 'processing' ? 'Preparing your preview…'
-      : job?.status === 'done' ? (resultUrl ? 'AI-generated preview ready.' : 'Loading your preview…')
+      : job?.status === 'done' ? (result ? 'AI-generated preview ready.' : 'Loading your preview…')
         : 'Try-on generation failed.'
 
   return (
@@ -179,6 +200,8 @@ export default function TryOnForm({ workspaceId }: { workspaceId: string }) {
           <h2 id="try-on-title">The fitting room</h2>
           <p>Upload your photo and a separate image of an upper-body garment.</p>
         </div>
+        {modelAvailable === false && <p className="runtime-note" role="status">Live previews are currently unavailable on this server. Open the sample below to see the TryFit Mirror.</p>}
+        <TryFitSample />
         <div className="studio-grid">
           <form className="studio-form" onSubmit={submit}>
             <div className="upload-grid">
@@ -198,12 +221,14 @@ export default function TryOnForm({ workspaceId }: { workspaceId: string }) {
           </form>
           <div className="result-card">
             <div className="result-heading">
-              <h3>Your preview</h3>
-              {resultUrl && <span>AI-generated</span>}
+              <h3>{result?.originalUrl ? 'The TryFit Mirror' : 'Your preview'}</h3>
+              {result && <span>AI-generated</span>}
             </div>
             <div className="result-stage" aria-live="polite">
-              {resultUrl && !error
-                ? <img src={resultUrl} alt="AI-generated virtual try-on preview" />
+              {result && !error
+                ? result.originalUrl
+                  ? <TryFitMirror key={jobId} original={result.originalUrl} result={result.url} />
+                  : <img src={result.url} alt="AI-generated virtual try-on preview" />
                 : <div className="result-message">
                     <span className="result-symbol" aria-hidden="true">{message ? '!' : '✧'}</span>
                     <strong>{error ? 'Request issue' : job ? status : 'Your result appears here'}</strong>

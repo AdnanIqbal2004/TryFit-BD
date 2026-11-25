@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react'
 import MerchantAuth from './MerchantAuth'
+import CustomerWorkspace from './CustomerWorkspace'
 import MerchantDashboard from './MerchantDashboard'
-import { api } from './merchantApi'
+import PlatformDashboard from './PlatformDashboard'
+import { api, postJson } from './merchantApi'
 import type { Session } from './merchantApi'
 import './App.css'
 import './Merchant.css'
+import './Account.css'
 import editorialPhoto from './assets/tryfit-editorial.webp'
 import TryOnForm from './TryOnForm'
+import { TryFitSample } from './TryFitMirror'
 import SiteSupport from './SiteSupport'
 
 const steps = [
@@ -19,9 +23,31 @@ function App() {
   const [route, setRoute] = useState(window.location.hash)
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   const [selectedWorkspace, setSelectedWorkspace] = useState('')
-  const workspaceId = session?.workspaces.find(item => item.id === selectedWorkspace)?.id ?? session?.workspaces[0]?.id
-  const accountAction = ['#verify-email', '#reset-password', '#accept-invite'].includes(route.split('?')[0])
-  const merchant = ['#merchant', '#sign-in', '#sign-up'].includes(route) || accountAction
+  const [loggingOut, setLoggingOut] = useState(false)
+  const [logoutError, setLogoutError] = useState('')
+  const workspace = session?.workspaces.find(item => item.id === selectedWorkspace) ?? session?.workspaces[0]
+  const workspaceId = workspace?.id
+  const customer = workspace?.kind === 'customer'
+  const accountAction = ['#verify-email', '#reset-password', '#accept-invite', '#owner-setup'].includes(route.split('?')[0])
+  const workspacePage = ['#merchant', '#customer', '#sign-in', '#sign-up'].includes(route)
+  const platformPage = route === '#platform' || Boolean(session?.platform_owner && workspacePage)
+  const accountPage = workspacePage || accountAction || platformPage
+  const customerPage = customer && !accountAction && !platformPage && (accountPage || route === '#try-on')
+
+  async function logOut() {
+    setLoggingOut(true)
+    setLogoutError('')
+    try {
+      await api('/api/auth/logout', postJson())
+      setSession(null)
+      setSelectedWorkspace('')
+      window.location.hash = '#sign-in'
+    } catch (cause) {
+      setLogoutError(cause instanceof Error ? cause.message : 'Could not log out. Try again.')
+    } finally {
+      setLoggingOut(false)
+    }
+  }
 
   useEffect(() => {
     const updateRoute = () => setRoute(window.location.hash)
@@ -37,11 +63,11 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const id = merchant ? 'home' : route.slice(1)
+    const id = accountPage ? 'home' : route.slice(1)
     if (!id) return
     const frame = requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView())
     return () => cancelAnimationFrame(frame)
-  }, [merchant, route])
+  }, [accountPage, route])
 
   return (
     <div className="website" id="home">
@@ -54,7 +80,14 @@ function App() {
             <a href="#contact">Contact</a>
           </nav>
           <div className="header-actions account-nav">
-            {session ? <a href="#merchant" className="button button-outline header-cta">Workspace <span aria-hidden="true">↗</span></a> : <>
+            {session ? <>
+              {session.workspaces.length > 1 && <select aria-label="Active workspace" value={workspaceId} onChange={event => setSelectedWorkspace(event.target.value)}>
+                {session.workspaces.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>}
+              {session.platform_owner && <a href="#platform" className="text-link platform-link">Owner dashboard</a>}
+              {workspace && <a href={customer ? '#customer' : '#merchant'} className="button button-outline header-cta">{customer ? 'My fitting room' : 'Workspace'} <span aria-hidden="true">↗</span></a>}
+              <button className="logout-button" type="button" onClick={logOut} disabled={loggingOut}>{loggingOut ? 'Logging out…' : 'Log out'}</button>
+            </> : <>
               <a href="#sign-in" className="text-link">Sign in</a>
               <a href="#sign-up" className="button button-primary header-cta">Sign up</a>
             </>}
@@ -62,10 +95,17 @@ function App() {
         </div>
       </header>
 
-      {merchant ? (
+      {logoutError && <p className="site-width notice notice-error account-error" role="alert">{logoutError}</p>}
+      {platformPage && session?.platform_owner ? (
+        <PlatformDashboard />
+      ) : platformPage && session !== undefined ? (
+        <MerchantAuth key="platform" session={session} onSession={setSession} route={route} />
+      ) : customerPage && session && workspaceId ? (
+        <CustomerWorkspace key={workspaceId} session={session} workspaceId={workspaceId} />
+      ) : accountPage ? (
         session === undefined ? <main className="site-width account-loading" role="status">Loading your account…</main>
           : session && workspaceId && !accountAction
-            ? <MerchantDashboard key={workspaceId} session={session} workspaceId={workspaceId} onWorkspace={setSelectedWorkspace} onSignOut={() => { setSession(null); setSelectedWorkspace('') }} />
+            ? <MerchantDashboard key={workspaceId} session={session} workspaceId={workspaceId} />
             : <MerchantAuth key={route === '#sign-up' ? 'register' : 'account'} session={session} onSession={setSession} route={route} />
       ) : <main>
         <section className="hero site-width" aria-labelledby="hero-title">
@@ -83,9 +123,12 @@ function App() {
 
         {workspaceId ? <TryOnForm key={workspaceId} workspaceId={workspaceId} /> : (
           <section className="studio" id="try-on" aria-labelledby="try-on-title">
-            <div className="site-width gated-studio">
-              <div><h2 id="try-on-title">The fitting room</h2><p>Sign in to create a try-on preview in your merchant workspace.</p></div>
-              <a href="#merchant" className="button button-primary">Open merchant studio ↗</a>
+            <div className="site-width">
+              <div className="gated-studio">
+                <div><h2 id="try-on-title">The fitting room</h2><p>Sign in to upload your photos and create a try-on preview.</p></div>
+                <a href="#sign-in" className="button button-primary">Sign in to try it on ↗</a>
+              </div>
+              <TryFitSample />
             </div>
           </section>
         )}

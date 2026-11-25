@@ -6,6 +6,8 @@ A two-person capstone prototype for AI-generated upper-body virtual try-on. The 
 
 **Previously demonstrated in Colab:** CatVTON generated a 576 × 768 upper-body preview on a Tesla T4 using an automatic mask. The denoising progress bar showed about 16 seconds for one sample. Use the notebook to show the input photos, automatic mask, and final preview. The output is an AI-generated approximation.
 
+**Offline demo:** Open **The fitting room → Try a sample** to compare the CatVTON demo's Simon portrait with the TryFit BD Colab cardigan result. The bundled WebP files use a resized [original CatVTON demo photo](https://huggingface.co/spaces/zhengchong/CatVTON/blob/24a6952918a8c6168b89ae32ad61e7e447e3987b/resource/demo/example/person/men/Simon_1.png) and the result cropped from the Colab capture. The sample assets are provided under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) for the academic demo.
+
 **Web demo:** The CatVTON adapter is enabled when `TRYFIT_CATVTON_SOURCE` points to the authors' source checkout in an environment with working PyTorch CUDA and Detectron2. The model loads on the first request. Do one rehearsal to download weights and warm the model before presenting.
 
 ### Run the real API check in Colab
@@ -56,6 +58,12 @@ Open http://127.0.0.1:8000 on that machine. Select a clear front-facing person p
 ### Backend merchant API and AMD runtime
 
 The backend includes merchant registration/sign-in, email verification and password recovery, workspace memberships, API-key management, store records, job history, and workspace usage endpoints. SQLite is created at `data/tryfit.db` by default. For development without SMTP, action links are returned to the UI; configure SMTP before sending real verification or invitation emails. Store records are not Shopify/WooCommerce OAuth integrations, and billing is not included.
+
+### Platform owner dashboard
+
+Generate a private setup token with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. Set it as `TRYFIT_PLATFORM_SETUP_TOKEN` in the server's private `.env` and restart the backend. Open `/#owner-setup?token=YOUR_TOKEN` on the app to create a dedicated platform owner account using an unregistered email address. The setup link works once per database. Remove the setting after setup and use `/#platform` for subsequent owner sign-ins.
+
+The dashboard reports customer and merchant accounts, verification status, merchant workspaces, registered stores, and try-on request totals. The dedicated owner account is excluded from customer and merchant totals. A merchant workspace role or API key does not grant platform access. Owner password reset requires SMTP, including in development.
 
 CatVTON detects AMD ROCm PyTorch through `torch.version.hip`. Set `TRYFIT_DEVICE=rocm` and configure `TRYFIT_CATVTON_SOURCE` on a supported GPU host. See [`docs/catvton.md`](docs/catvton.md) and run `python scripts/check_amd_runtime.py` in the GPU environment before installing CatVTON dependencies. AMD support has not been validated with the full CatVTON/DensePose stack; Windows support is especially limited.
 

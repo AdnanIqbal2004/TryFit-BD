@@ -52,7 +52,8 @@ class SaaSStore:
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     slug TEXT NOT NULL UNIQUE,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    kind TEXT NOT NULL DEFAULT 'merchant' CHECK(kind IN ('merchant', 'customer'))
                 );
                 CREATE TABLE IF NOT EXISTS memberships (
                     organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -72,6 +73,7 @@ class SaaSStore:
                     consumed_at TEXT,
                     created_at TEXT NOT NULL
                 );
+                CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id);
                 CREATE INDEX IF NOT EXISTS idx_email_tokens_email ON email_tokens(email, purpose);
                 CREATE TABLE IF NOT EXISTS sessions (
                     token_hash TEXT PRIMARY KEY,
@@ -123,12 +125,24 @@ class SaaSStore:
                 CREATE INDEX IF NOT EXISTS idx_usage_org_date ON usage_events(organization_id, created_at);
                 """
             )
+            # Existing local databases predate customer workspaces.
+            db.execute("BEGIN IMMEDIATE")
+            columns = {column["name"] for column in db.execute("PRAGMA table_info(organizations)")}
+            if "kind" not in columns:
+                db.execute(
+                    "ALTER TABLE organizations ADD COLUMN kind TEXT NOT NULL DEFAULT 'merchant' "
+                    "CHECK(kind IN ('merchant', 'customer'))"
+                )
+            user_columns = {column["name"] for column in db.execute("PRAGMA table_info(users)")}
+            if "is_platform_owner" not in user_columns:
+                db.execute("ALTER TABLE users ADD COLUMN is_platform_owner INTEGER NOT NULL DEFAULT 0 CHECK(is_platform_owner IN (0, 1))")
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_single_platform_owner ON users(is_platform_owner) WHERE is_platform_owner = 1")
 
     @staticmethod
     def _dict(row: sqlite3.Row | None) -> dict | None:
         return dict(row) if row is not None else None
 
-    def create_account(self, *, full_name: str, business_name: str, email: str, password_hash: str) -> tuple[dict, dict]:
+    def create_account(self, *, full_name: str, business_name: str, email: str, password_hash: str, kind: str = "merchant") -> tuple[dict, dict]:
         user_id, organization_id = str(uuid.uuid4()), str(uuid.uuid4())
         now = utc_now()
         base_slug = "".join(c.lower() if c.isalnum() else "-" for c in business_name).strip("-")[:48] or "workspace"
@@ -139,8 +153,8 @@ class SaaSStore:
                 (user_id, full_name.strip(), email.lower().strip(), password_hash, now),
             )
             db.execute(
-                "INSERT INTO organizations(id,name,slug,created_at) VALUES(?,?,?,?)",
-                (organization_id, business_name.strip(), slug, now),
+                "INSERT INTO organizations(id,name,slug,created_at,kind) VALUES(?,?,?,?,?)",
+                (organization_id, business_name.strip(), slug, now, kind),
             )
             db.execute(
                 "INSERT INTO memberships(organization_id,user_id,role,created_at) VALUES(?,?,?,?)",
@@ -150,11 +164,24 @@ class SaaSStore:
 
     def get_user(self, user_id: str) -> dict | None:
         with self._connection() as db:
-            return self._dict(db.execute("SELECT id,full_name,email,password_hash,email_verified_at,created_at,disabled_at FROM users WHERE id=?", (user_id,)).fetchone())
+            return self._dict(db.execute("SELECT id,full_name,email,password_hash,email_verified_at,created_at,disabled_at,is_platform_owner FROM users WHERE id=?", (user_id,)).fetchone())
 
     def get_user_by_email(self, email: str) -> dict | None:
         with self._connection() as db:
-            return self._dict(db.execute("SELECT id,full_name,email,password_hash,email_verified_at,created_at,disabled_at FROM users WHERE email=? COLLATE NOCASE", (email.lower().strip(),)).fetchone())
+            return self._dict(db.execute("SELECT id,full_name,email,password_hash,email_verified_at,created_at,disabled_at,is_platform_owner FROM users WHERE email=? COLLATE NOCASE", (email.lower().strip(),)).fetchone())
+
+    def create_platform_owner(self, full_name: str, email: str, password_hash: str) -> bool:
+        now = utc_now()
+        try:
+            with self._connection() as db:
+                db.execute(
+                    "INSERT INTO users(id,full_name,email,password_hash,email_verified_at,created_at,is_platform_owner) "
+                    "VALUES(?,?,?,?,?,?,1)",
+                    (str(uuid.uuid4()), full_name, email, password_hash, now, now),
+                )
+        except sqlite3.IntegrityError:
+            return False
+        return True
 
     def create_email_token(self, *, token_hash: str, purpose: str, email: str, expires_at: str, user_id: str | None = None, organization_id: str | None = None, invited_role: str | None = None) -> None:
         with self._connection() as db:
@@ -215,7 +242,7 @@ class SaaSStore:
     def get_session_user(self, token_hash: str) -> dict | None:
         with self._connection() as db:
             row = db.execute(
-                "SELECT u.id,u.full_name,u.email,u.email_verified_at,u.created_at,s.expires_at "
+                "SELECT u.id,u.full_name,u.email,u.email_verified_at,u.created_at,u.is_platform_owner,s.expires_at "
                 "FROM sessions s JOIN users u ON u.id=s.user_id "
                 "WHERE s.token_hash=? AND s.expires_at>? AND u.disabled_at IS NULL",
                 (token_hash, utc_now()),
@@ -229,7 +256,7 @@ class SaaSStore:
     def organizations_for_user(self, user_id: str) -> list[dict]:
         with self._connection() as db:
             rows = db.execute(
-                "SELECT o.id,o.name,o.slug,m.role FROM organizations o JOIN memberships m ON m.organization_id=o.id "
+                "SELECT o.id,o.name,o.slug,o.kind,m.role FROM organizations o JOIN memberships m ON m.organization_id=o.id "
                 "WHERE m.user_id=? ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,o.name",
                 (user_id,),
             ).fetchall()
@@ -237,19 +264,57 @@ class SaaSStore:
 
     def get_organization(self, organization_id: str) -> dict | None:
         with self._connection() as db:
-            return self._dict(db.execute("SELECT id,name,slug,created_at FROM organizations WHERE id=?", (organization_id,)).fetchone())
+            return self._dict(db.execute("SELECT id,name,slug,created_at,kind FROM organizations WHERE id=?", (organization_id,)).fetchone())
+
+    def platform_overview(self, *, page: int, page_size: int) -> dict:
+        accounts = """
+            WITH accounts AS (
+                SELECT u.id, u.full_name, u.email, u.created_at,
+                    u.email_verified_at IS NOT NULL AS verified,
+                    CASE MIN(CASE o.kind WHEN 'customer' THEN 0 WHEN 'merchant' THEN 1 ELSE 2 END)
+                        WHEN 0 THEN 'customer' WHEN 1 THEN 'merchant' ELSE 'unassigned'
+                    END AS kind
+                FROM users u
+                LEFT JOIN memberships m ON m.user_id = u.id
+                LEFT JOIN organizations o ON o.id = m.organization_id
+                WHERE u.is_platform_owner = 0
+                GROUP BY u.id
+            )
+        """
+        with self._connection() as db:
+            db.execute("BEGIN")
+            counts = db.execute(accounts + """
+                SELECT COUNT(*) AS total,
+                    COUNT(CASE WHEN kind = 'customer' THEN 1 END) AS customers,
+                    COUNT(CASE WHEN kind = 'merchant' THEN 1 END) AS merchants,
+                    COUNT(CASE WHEN NOT verified THEN 1 END) AS unverified,
+                    (SELECT COUNT(*) FROM organizations WHERE kind = 'merchant') AS merchant_workspaces,
+                    (SELECT COUNT(*) FROM store_connections) AS stores,
+                    (SELECT COUNT(*) FROM tryon_jobs) AS tryon_requests
+                FROM accounts
+            """).fetchone()
+            rows = db.execute(accounts + """
+                SELECT id, full_name, email, kind, verified, created_at FROM accounts
+                ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
+            """, (page_size, (page - 1) * page_size)).fetchall()
+        return {
+            "counts": dict(counts),
+            "accounts": [{**dict(row), "verified": bool(row["verified"])} for row in rows],
+            "page": page,
+            "page_size": page_size,
+        }
 
     def get_membership(self, user_id: str, organization_id: str | None = None) -> dict | None:
         with self._connection() as db:
             if organization_id:
                 row = db.execute(
-                    "SELECT o.id AS organization_id,o.name,o.slug,m.user_id,m.role FROM memberships m "
+                    "SELECT o.id AS organization_id,o.name,o.slug,o.kind,m.user_id,m.role FROM memberships m "
                     "JOIN organizations o ON o.id=m.organization_id WHERE m.user_id=? AND o.id=?",
                     (user_id, organization_id),
                 ).fetchone()
             else:
                 row = db.execute(
-                    "SELECT o.id AS organization_id,o.name,o.slug,m.user_id,m.role FROM memberships m "
+                    "SELECT o.id AS organization_id,o.name,o.slug,o.kind,m.user_id,m.role FROM memberships m "
                     "JOIN organizations o ON o.id=m.organization_id WHERE m.user_id=? "
                     "ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,o.name LIMIT 1",
                     (user_id,),
@@ -286,7 +351,7 @@ class SaaSStore:
                 (token["organization_id"], user_id, token["invited_role"], now),
             )
             db.execute("UPDATE email_tokens SET consumed_at=? WHERE token_hash=?", (now, token_hash))
-            return dict(db.execute("SELECT id,name,slug,created_at FROM organizations WHERE id=?", (token["organization_id"],)).fetchone())
+            return dict(db.execute("SELECT id,name,slug,created_at,kind FROM organizations WHERE id=?", (token["organization_id"],)).fetchone())
 
     def revoke_member(self, organization_id: str, user_id: str) -> bool:
         with self._connection() as db:

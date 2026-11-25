@@ -1,6 +1,8 @@
 """Merchant registration, email verification, sessions, and recovery."""
 from datetime import datetime, timedelta, timezone
+import hmac
 import re
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -11,12 +13,14 @@ from app.services.email import action_link, send_action_email
 from app.services.saas_store import SaaSStore
 
 router = APIRouter(prefix="/api/auth", tags=["merchant accounts"])
+MIN_PASSWORD_LENGTH = 8
 
 class RegisterBody(BaseModel):
     full_name: str = Field(min_length=2, max_length=120)
-    business_name: str = Field(min_length=2, max_length=120)
+    business_name: str | None = Field(default=None, max_length=120)
+    account_type: Literal["merchant", "customer"] = "merchant"
     email: str = Field(min_length=5, max_length=254)
-    password: str = Field(min_length=12, max_length=256)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
 
 class Credentials(BaseModel):
     email: str
@@ -30,15 +34,26 @@ class TokenBody(BaseModel):
 
 class PasswordBody(BaseModel):
     token: str
-    password: str = Field(min_length=12, max_length=256)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
+
+class PlatformSetupBody(PasswordBody):
+    full_name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=254)
 
 class AcceptInviteBody(BaseModel):
     token: str
     full_name: str | None = Field(default=None, min_length=2, max_length=120)
-    password: str | None = Field(default=None, min_length=12, max_length=256)
+    password: str | None = Field(default=None, min_length=MIN_PASSWORD_LENGTH, max_length=256)
 
 def _store(request: Request) -> SaaSStore:
     return request.app.state.saas_store
+
+def _session_payload(request: Request, user_id: str, full_name: str, email: str, *, platform_owner: bool = False) -> dict:
+    return {
+        "user": {"id": user_id, "full_name": full_name, "email": email},
+        "workspaces": _store(request).organizations_for_user(user_id),
+        "platform_owner": platform_owner,
+    }
 
 def _email(value: str) -> str:
     value = value.strip().lower()
@@ -60,14 +75,26 @@ def register(body: RegisterBody, request: Request):
     email, store, settings = _email(body.email), _store(request), get_settings()
     if store.get_user_by_email(email):
         raise HTTPException(409, "An account with this email already exists. Try signing in or resetting the password.")
+    name = body.full_name.strip()
+    business_name = (body.business_name or "").strip()
+    if len(name) < 2:
+        raise HTTPException(422, "Enter your full name.")
+    if body.account_type == "merchant" and len(business_name) < 2:
+        raise HTTPException(422, "Enter your business name.")
     try:
-        user, organization = store.create_account(full_name=body.full_name, business_name=body.business_name, email=email, password_hash=hash_password(body.password))
+        user, organization = store.create_account(
+            full_name=name,
+            business_name=business_name if body.account_type == "merchant" else "Personal fitting room",
+            email=email,
+            password_hash=hash_password(body.password),
+            kind=body.account_type,
+        )
         raw = new_token()
         store.create_email_token(token_hash=token_digest(raw), purpose="verify", user_id=user["id"], email=email, expires_at=_expiry(settings.verification_minutes))
         preview = send_action_email(settings, email, "Verify your TryFit BD email", action_link(settings, "verify-email", raw))
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
-    return {"message": "Check your email for a verification link.", "preview_url": preview, "workspace": {"id": organization["id"], "name": organization["name"]}}
+    return {"message": "Check your email for a verification link.", "preview_url": preview, "workspace": {"id": organization["id"], "name": organization["name"], "kind": organization["kind"]}}
 
 @router.post("/verify-email")
 def verify_email(body: TokenBody, request: Request):
@@ -76,6 +103,20 @@ def verify_email(body: TokenBody, request: Request):
         raise HTTPException(400, "This verification link is invalid or expired. Request another one.")
     _store(request).mark_email_verified(token["user_id"])
     return {"message": "Email verified. You can now sign in."}
+
+
+@router.post("/platform-setup", status_code=201)
+def setup_platform(body: PlatformSetupBody, request: Request):
+    setup_token = get_settings().platform_setup_token
+    if len(setup_token) < 32 or not hmac.compare_digest(body.token.encode(), setup_token.encode()):
+        raise HTTPException(403, "The owner setup link is invalid or unavailable.")
+    full_name = body.full_name.strip()
+    if len(full_name) < 2:
+        raise HTTPException(422, "Enter your full name.")
+    store = _store(request)
+    if not store.create_platform_owner(full_name, _email(body.email), hash_password(body.password)):
+        raise HTTPException(409, "Owner setup is already complete or this email is already registered.")
+    return {"message": "Owner account created. Sign in to open the dashboard."}
 
 @router.post("/resend-verification")
 def resend_verification(body: EmailBody, request: Request):
@@ -90,15 +131,27 @@ def resend_verification(body: EmailBody, request: Request):
             raise HTTPException(503, str(exc)) from exc
     return {"message": "If the account needs verification, a link has been sent.", "preview_url": preview}
 
-@router.post("/login")
-def login(body: Credentials, request: Request, response: Response):
+def _login(body: Credentials, request: Request, response: Response, *, platform_owner: bool):
     user = _store(request).get_user_by_email(_email(body.email))
-    if not user or not verify_password(body.password, user["password_hash"]):
+    if not user or user["disabled_at"] or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(401, "Email or password is incorrect.")
     if not user["email_verified_at"]:
         raise HTTPException(403, "Verify your email before signing in.")
+    if bool(user["is_platform_owner"]) != platform_owner:
+        detail = "Sign in with your platform owner account." if platform_owner else "Use the owner sign-in page for this account."
+        raise HTTPException(403, detail)
     _session(request, response, user["id"])
-    return {"user": {"id": user["id"], "full_name": user["full_name"], "email": user["email"]}, "workspaces": _store(request).organizations_for_user(user["id"])}
+    return _session_payload(request, user["id"], user["full_name"], user["email"], platform_owner=platform_owner)
+
+
+@router.post("/login")
+def login(body: Credentials, request: Request, response: Response):
+    return _login(body, request, response, platform_owner=False)
+
+
+@router.post("/platform-login")
+def platform_login(body: Credentials, request: Request, response: Response):
+    return _login(body, request, response, platform_owner=True)
 
 @router.post("/logout", status_code=204)
 def logout(request: Request, response: Response):
@@ -111,14 +164,18 @@ def logout(request: Request, response: Response):
 
 @router.get("/me")
 def me(request: Request):
+    raw = request.cookies.get(SESSION_COOKIE)
+    user = _store(request).get_session_user(token_digest(raw)) if raw else None
+    if user and user["is_platform_owner"] and user["email_verified_at"]:
+        return _session_payload(request, user["id"], user["full_name"], user["email"], platform_owner=True)
     actor = current_actor(request)
-    return {"user": {"id": actor.user_id, "full_name": actor.full_name, "email": actor.email}, "workspaces": _store(request).organizations_for_user(actor.user_id)}
+    return _session_payload(request, actor.user_id, actor.full_name, actor.email)
 
 @router.post("/password-reset/request")
 def request_password_reset(body: EmailBody, request: Request):
     email, store, settings = _email(body.email), _store(request), get_settings()
     user, preview = store.get_user_by_email(email), None
-    if user and user["email_verified_at"]:
+    if user and user["email_verified_at"] and (not user["is_platform_owner"] or settings.smtp_host):
         raw = new_token()
         store.create_email_token(token_hash=token_digest(raw), purpose="reset", user_id=user["id"], email=email, expires_at=_expiry(settings.password_reset_minutes))
         try:
@@ -129,10 +186,13 @@ def request_password_reset(body: EmailBody, request: Request):
 
 @router.post("/password-reset/confirm")
 def confirm_password_reset(body: PasswordBody, request: Request):
-    token = _store(request).consume_email_token(token_hash=token_digest(body.token), purpose="reset")
-    if not token:
+    settings = get_settings()
+    store = _store(request)
+    token = store.consume_email_token(token_hash=token_digest(body.token), purpose="reset")
+    user = store.get_user(token["user_id"]) if token else None
+    if not user or (user["is_platform_owner"] and not settings.smtp_host):
         raise HTTPException(400, "This password reset link is invalid or expired.")
-    _store(request).update_password(token["user_id"], hash_password(body.password))
+    store.update_password(user["id"], hash_password(body.password))
     return {"message": "Password updated. Sign in with your new password."}
 
 @router.post("/invitations/accept")

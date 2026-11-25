@@ -9,11 +9,9 @@ const tabs: Tab[] = ['Overview', 'Stores', 'Team', 'API keys']
 type Props = {
   session: Session
   workspaceId: string
-  onWorkspace: (id: string) => void
-  onSignOut: () => void
 }
 
-export default function MerchantDashboard({ session, workspaceId, onWorkspace, onSignOut }: Props) {
+export default function MerchantDashboard({ session, workspaceId }: Props) {
   const [tab, setTab] = useState<Tab>('Overview')
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [error, setError] = useState('')
@@ -76,19 +74,11 @@ export default function MerchantDashboard({ session, workspaceId, onWorkspace, o
     <main className="merchant-workspace site-width">
       <div className="workspace-heading">
         <div>
-          <p className="eyebrow"><span aria-hidden="true" /> Merchant workspace</p>
+          <p className="eyebrow"><span aria-hidden="true" /> {canManage ? 'Admin workspace' : 'Merchant workspace'}</p>
           <h1>{workspace?.name ?? 'Your workspace'}</h1>
           <p>{session.user.full_name} · {workspace?.role ?? 'Merchant'}</p>
         </div>
-        <div className="workspace-controls">
-          {session.workspaces.length > 1 && <label className="visually-hidden" htmlFor="workspace-select">Workspace</label>}
-          {session.workspaces.length > 1 && <select id="workspace-select" value={workspaceId} disabled={busy} onChange={event => onWorkspace(event.target.value)}>
-            {session.workspaces.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>}
-          <button className="button button-outline" disabled={busy} type="button" onClick={() => {
-            void action(async () => { await api('/api/auth/logout', postJson()); onSignOut() })
-          }}>Sign out</button>
-        </div>
+
       </div>
 
       <nav className="workspace-nav" aria-label="Workspace sections">
