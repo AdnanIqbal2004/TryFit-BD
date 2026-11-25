@@ -11,7 +11,7 @@ from PIL import Image
 from app.ai.engine import UnconfiguredTryOnEngine
 from app.ai.output_check import OutputValidationError, validate_output_image
 from app.services.job_manager import JobManager, JobNotFoundError
-from tests.conftest import make_image_bytes
+from tests.conftest import make_image_bytes, sign_in_account
 
 
 async def _wait_for_terminal(manager: JobManager, job_id: str, timeout: float = 3.0):
@@ -107,6 +107,7 @@ def test_configured_catvton_adapter_serves_result_and_deletes_it(settings, monke
     from PIL import ImageDraw
 
     from app.ai.catvton import CatVTONEngine
+    import app.api.auth as auth_api
     import app.api.jobs as jobs_api
     import app.main as main_module
 
@@ -135,8 +136,10 @@ def test_configured_catvton_adapter_serves_result_and_deletes_it(settings, monke
     settings.catvton_source = tmp_path / "catvton-source"
     monkeypatch.setattr(main_module, "get_settings", lambda: settings)
     monkeypatch.setattr(jobs_api, "get_settings", lambda: settings)
+    monkeypatch.setattr(auth_api, "get_settings", lambda: settings)
 
     with TestClient(main_module.app) as client:
+        sign_in_account(client, account_type="customer")
         files = {
             "person_image": ("person.jpg", make_image_bytes(), "image/jpeg"),
             "garment_image": ("garment.jpg", make_image_bytes(), "image/jpeg"),

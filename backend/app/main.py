@@ -12,6 +12,7 @@ from app.api.jobs import router as jobs_router
 from app.api.uploads import router as uploads_router
 from app.api.auth import router as auth_router
 from app.api.workspace import router as workspace_router
+from app.api.platform import router as platform_router
 from app.ai.catvton import CatVTONEngine
 from app.ai.engine import UnconfiguredTryOnEngine
 from app.core.config import PROJECT_ROOT, Settings, get_settings
@@ -60,6 +61,7 @@ app.include_router(uploads_router)
 app.include_router(jobs_router)
 app.include_router(auth_router)
 app.include_router(workspace_router)
+app.include_router(platform_router)
 
 
 # Serve the production UI and API together when a frontend build is available.

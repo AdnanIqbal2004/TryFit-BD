@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     cleanup_interval_seconds: int = Field(default=60, gt=0)
     max_pending_jobs: int = Field(default=10, gt=0)
     database_url: str = "sqlite:///./data/tryfit.db"
+    platform_setup_token: str = ""
     app_base_url: str = "http://127.0.0.1:5173"
     session_days: int = Field(default=14, ge=1, le=90)
     verification_minutes: int = Field(default=30, ge=5, le=1440)
